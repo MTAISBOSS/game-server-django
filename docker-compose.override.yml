@@ -1,0 +1,22 @@
+services:
+  api:
+    volumes:
+      - .:/app
+    command: >
+      sh -c "
+        python manage.py migrate --noinput &&
+        python scripts/seed.py &&
+        python manage.py runserver 0.0.0.0:8000
+      "
+
+  ws:
+    volumes:
+      - .:/app
+    command: >
+      sh -c "
+        daphne config.asgi:application --bind 0.0.0.0 --port 8001 -v 2
+      "
+
+  seed:
+    volumes:
+      - .:/app

@@ -4,6 +4,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.http import JsonResponse
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+from rest_framework.permissions import AllowAny
 
 
 def health(request):
@@ -17,9 +18,9 @@ urlpatterns = [
     # Django built-in admin
     path('django-admin/', admin.site.urls),
 
-    # API docs
-    path('api/schema/', SpectacularAPIView.as_view(),                        name='schema'),
-    path('api/docs/',   SpectacularSwaggerView.as_view(url_name='schema'),   name='swagger-ui'),
+    # API docs (public — AllowAny to bypass global IsAuthenticated)
+    path('api/schema/', SpectacularAPIView.as_view(permission_classes=[AllowAny]),                          name='schema'),
+    path('api/docs/',   SpectacularSwaggerView.as_view(url_name='schema', permission_classes=[AllowAny]),   name='swagger-ui'),
 
     # REST API — same paths Unity SDK already uses
     path('auth/',        include('apps.auth_service.urls')),

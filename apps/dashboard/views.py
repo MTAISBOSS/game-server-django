@@ -33,7 +33,12 @@ def login_view(request):
     if request.method == 'POST':
         username = request.POST.get('username')
         password = request.POST.get('password')
-        user = authenticate(request, username=username, password=password)
+        # USERNAME_FIELD is 'id' (a UUIDField), so look up by username first
+        try:
+            player = Player.objects.get(username=username)
+            user = authenticate(request, username=str(player.id), password=password)
+        except Player.DoesNotExist:
+            user = None
         if user and is_staff(user):
             login(request, user)
             return redirect('dashboard:home')
