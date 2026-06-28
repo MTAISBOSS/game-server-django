@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Game Backend{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+</head>
+<body class="bg-gray-950 text-gray-100 font-sans flex min-h-screen">
+
+<!-- Sidebar -->
+<aside class="w-64 bg-gray-900 border-r border-gray-800 flex flex-col fixed h-full z-10">
+  <div class="p-5 border-b border-gray-800">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+        <i class="fas fa-gamepad text-white text-sm"></i>
+      </div>
+      <span class="font-bold text-white text-lg">Game Backend</span>
+    </div>
+  </div>
+
+  <nav class="flex-1 p-4 space-y-1 overflow-y-auto">
+    <a href="{% url 'dashboard:home' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if request.resolver_match.url_name == 'home' %}bg-indigo-600 text-white{% else %}text-gray-400 hover:bg-gray-800 hover:text-white{% endif %} transition">
+      <i class="fas fa-chart-line w-4"></i> Dashboard
+    </a>
+
+    <div class="pt-3 pb-1">
+      <p class="text-xs text-gray-600 uppercase tracking-wider px-3">Players</p>
+    </div>
+    <a href="{% url 'dashboard:players' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'player' in request.resolver_match.url_name %}bg-indigo-600 text-white{% else %}text-gray-400 hover:bg-gray-800 hover:text-white{% endif %} transition">
+      <i class="fas fa-users w-4"></i> Players
+    </a>
+
+    <div class="pt-3 pb-1">
+      <p class="text-xs text-gray-600 uppercase tracking-wider px-3">Leaderboard</p>
+    </div>
+    <a href="{% url 'dashboard:leaderboard' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if request.resolver_match.url_name == 'leaderboard' %}bg-indigo-600 text-white{% else %}text-gray-400 hover:bg-gray-800 hover:text-white{% endif %} transition">
+      <i class="fas fa-trophy w-4"></i> Leaderboard
+    </a>
+    <a href="{% url 'dashboard:seasons' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'season' in request.resolver_match.url_name %}bg-indigo-600 text-white{% else %}text-gray-400 hover:bg-gray-800 hover:text-white{% endif %} transition">
+      <i class="fas fa-calendar w-4"></i> Seasons
+    </a>
+
+    <div class="pt-3 pb-1">
+      <p class="text-xs text-gray-600 uppercase tracking-wider px-3">Resources</p>
+    </div>
+    <a href="{% url 'dashboard:catalog' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'catalog' in request.resolver_match.url_name %}bg-indigo-600 text-white{% else %}text-gray-400 hover:bg-gray-800 hover:text-white{% endif %} transition">
+      <i class="fas fa-store w-4"></i> Item Catalog
+    </a>
+
+    <div class="pt-3 pb-1">
+      <p class="text-xs text-gray-600 uppercase tracking-wider px-3">System</p>
+    </div>
+    <a href="/django-admin/" target="_blank"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-400 hover:bg-gray-800 hover:text-white transition">
+      <i class="fas fa-cog w-4"></i> Django Admin
+    </a>
+    <a href="/api/docs/" target="_blank"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-400 hover:bg-gray-800 hover:text-white transition">
+      <i class="fas fa-book w-4"></i> API Docs
+    </a>
+  </nav>
+
+  <div class="p-4 border-t border-gray-800">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-7 h-7 bg-indigo-700 rounded-full flex items-center justify-center text-xs font-bold">
+          {{ request.user.username|first|upper }}
+        </div>
+        <span class="text-sm text-gray-300">{{ request.user.username|default:"Admin" }}</span>
+      </div>
+      <a href="{% url 'dashboard:logout' %}" class="text-gray-500 hover:text-red-400 transition">
+        <i class="fas fa-sign-out-alt"></i>
+      </a>
+    </div>
+  </div>
+</aside>
+
+<!-- Main -->
+<main class="ml-64 flex-1 flex flex-col min-h-screen">
+  <header class="bg-gray-900 border-b border-gray-800 px-8 py-4 flex items-center justify-between sticky top-0 z-10">
+    <h1 class="text-lg font-semibold text-white">{% block header %}Dashboard{% endblock %}</h1>
+    <div class="flex items-center gap-3">
+      <span id="live-dot" class="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Live"></span>
+      <span class="text-xs text-gray-500">Live</span>
+    </div>
+  </header>
+
+  <!-- Flash messages -->
+  {% if messages %}
+  <div class="px-8 pt-4 space-y-2">
+    {% for msg in messages %}
+    <div class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm
+      {% if msg.tags == 'error' %}bg-red-900/50 border border-red-700 text-red-300
+      {% else %}bg-green-900/50 border border-green-700 text-green-300{% endif %}">
+      <i class="fas {% if msg.tags == 'error' %}fa-exclamation-circle{% else %}fa-check-circle{% endif %}"></i>
+      {{ msg }}
+      <button onclick="this.parentElement.remove()" class="ml-auto text-gray-400 hover:text-white">&times;</button>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="flex-1 p-8">
+    {% block content %}{% endblock %}
+  </div>
+</main>
+
+<script>
+// Live WebSocket connection for real-time stats
+(function() {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${window.location.host}/ws/stats/`);
+  ws.onopen = () => {
+    document.getElementById('live-dot').classList.add('bg-green-500');
+    document.getElementById('live-dot').classList.remove('bg-red-500');
+  };
+  ws.onclose = () => {
+    document.getElementById('live-dot').classList.add('bg-red-500');
+    document.getElementById('live-dot').classList.remove('bg-green-500');
+    setTimeout(() => location.reload(), 5000);
+  };
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (window.onStatsUpdate) window.onStatsUpdate(data);
+  };
+})();
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

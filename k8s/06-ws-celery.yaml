@@ -1,0 +1,81 @@
+---
+# ─── WebSocket Server (Daphne) ────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: game-ws
+  namespace: game-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: game-ws
+  template:
+    metadata:
+      labels:
+        app: game-ws
+    spec:
+      containers:
+        - name: ws
+          image: YOUR_REGISTRY/game-backend-django-ws:latest
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: game-config
+            - secretRef:
+                name: game-secrets
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: game-ws-service
+  namespace: game-backend
+spec:
+  selector:
+    app: game-ws
+  ports:
+    - port: 8001
+      targetPort: 8001
+
+---
+# ─── Celery Worker ────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: game-celery
+  namespace: game-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: game-celery
+  template:
+    metadata:
+      labels:
+        app: game-celery
+    spec:
+      containers:
+        - name: celery
+          image: YOUR_REGISTRY/game-backend-django:latest
+          command: ["celery", "-A", "config", "worker", "-l", "info", "-c", "2"]
+          envFrom:
+            - configMapRef:
+                name: game-config
+            - secretRef:
+                name: game-secrets
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"

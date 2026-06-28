@@ -1,0 +1,133 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Players — Game Backend{% endblock %}
+{% block header %}Players{% endblock %}
+
+{% block content %}
+<!-- Search & Filters -->
+<div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+  <form method="get" class="flex flex-wrap gap-3 items-end">
+    <div class="flex-1 min-w-48">
+      <label class="block text-xs text-gray-500 mb-1.5">Search</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="device ID, phone, username…"
+        class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white
+               placeholder-gray-600 focus:outline-none focus:border-indigo-500 transition">
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1.5">Role</label>
+      <select name="role" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+        <option value="">All roles</option>
+        <option value="player"    {% if role == 'player' %}selected{% endif %}>Player</option>
+        <option value="moderator" {% if role == 'moderator' %}selected{% endif %}>Moderator</option>
+        <option value="admin"     {% if role == 'admin' %}selected{% endif %}>Admin</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1.5">Status</label>
+      <select name="banned" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+        <option value="">All</option>
+        <option value="0" {% if banned == '0' %}selected{% endif %}>Active</option>
+        <option value="1" {% if banned == '1' %}selected{% endif %}>Banned</option>
+      </select>
+    </div>
+    <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg transition">
+      Search
+    </button>
+    {% if q or role or banned %}
+    <a href="{% url 'dashboard:players' %}" class="text-gray-400 hover:text-white text-sm px-3 py-2 transition">
+      Clear
+    </a>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Table -->
+<div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+  <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+    <h2 class="font-medium text-white">{{ page_obj.paginator.count }} players</h2>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-gray-800 text-gray-500 text-xs uppercase tracking-wider">
+          <th class="text-left px-6 py-3">Player</th>
+          <th class="text-left px-6 py-3">Phone</th>
+          <th class="text-left px-6 py-3">Platform</th>
+          <th class="text-left px-6 py-3">Role</th>
+          <th class="text-left px-6 py-3">Status</th>
+          <th class="text-left px-6 py-3">Joined</th>
+          <th class="text-left px-6 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800">
+        {% for player in page_obj %}
+        <tr class="hover:bg-gray-800/50 transition">
+          <td class="px-6 py-4">
+            <div>
+              <p class="text-white font-medium">
+                {% if player.profile %}{{ player.profile.username }}{% else %}<span class="text-gray-500 italic">No profile</span>{% endif %}
+              </p>
+              <p class="text-xs text-gray-600 font-mono mt-0.5">{{ player.id }}</p>
+            </div>
+          </td>
+          <td class="px-6 py-4 text-gray-400">
+            {% if player.phone %}
+              <span class="text-green-400">{{ player.phone }}</span>
+            {% else %}
+              <span class="text-gray-600">—</span>
+            {% endif %}
+          </td>
+          <td class="px-6 py-4 text-gray-400">{{ player.platform }}</td>
+          <td class="px-6 py-4">
+            <span class="px-2 py-0.5 rounded text-xs font-medium
+              {% if player.role == 'admin' %}bg-purple-900/50 text-purple-300
+              {% elif player.role == 'moderator' %}bg-blue-900/50 text-blue-300
+              {% else %}bg-gray-800 text-gray-400{% endif %}">
+              {{ player.role }}
+            </span>
+          </td>
+          <td class="px-6 py-4">
+            {% if player.is_banned %}
+              <span class="px-2 py-0.5 rounded text-xs font-medium bg-red-900/50 text-red-300">Banned</span>
+            {% else %}
+              <span class="px-2 py-0.5 rounded text-xs font-medium bg-green-900/50 text-green-300">Active</span>
+            {% endif %}
+          </td>
+          <td class="px-6 py-4 text-gray-500 text-xs">{{ player.created_at|date:"M d, Y" }}</td>
+          <td class="px-6 py-4">
+            <a href="{% url 'dashboard:player-detail' player.id %}"
+               class="text-indigo-400 hover:text-indigo-300 text-xs transition">View →</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="px-6 py-12 text-center text-gray-600">No players found</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  {% if page_obj.has_other_pages %}
+  <div class="px-6 py-4 border-t border-gray-800 flex items-center justify-between">
+    <p class="text-xs text-gray-500">
+      Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+    </p>
+    <div class="flex gap-2">
+      {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}&q={{ q }}&role={{ role }}&banned={{ banned }}"
+           class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-300 transition">
+          ← Prev
+        </a>
+      {% endif %}
+      {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}&q={{ q }}&role={{ role }}&banned={{ banned }}"
+           class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-300 transition">
+          Next →
+        </a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

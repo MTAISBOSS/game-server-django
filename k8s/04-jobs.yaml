@@ -1,0 +1,53 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: game-migrate
+  namespace: game-backend
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - until pg_isready -h postgres-service -U gameuser; do echo waiting; sleep 2; done
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: game-secrets
+                  key: POSTGRES_PASSWORD
+      containers:
+        - name: migrate
+          image: YOUR_REGISTRY/game-backend-django:latest  # replace with your image
+          command: ["python", "manage.py", "migrate", "--noinput"]
+          envFrom:
+            - configMapRef:
+                name: game-config
+            - secretRef:
+                name: game-secrets
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: game-seed
+  namespace: game-backend
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: seed
+          image: YOUR_REGISTRY/game-backend-django:latest
+          command: ["python", "scripts/seed.py"]
+          envFrom:
+            - configMapRef:
+                name: game-config
+            - secretRef:
+                name: game-secrets

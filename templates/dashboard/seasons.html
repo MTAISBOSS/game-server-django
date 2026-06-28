@@ -1,0 +1,99 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Seasons — Game Backend{% endblock %}
+{% block header %}Seasons{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  <!-- Create season form -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+    <h2 class="text-sm font-semibold text-white mb-4">Create New Season</h2>
+    <form method="post" action="{% url 'dashboard:season-create' %}" class="space-y-4">
+      {% csrf_token %}
+      <div>
+        <label class="block text-xs text-gray-500 mb-1.5">Season Name</label>
+        <input type="text" name="name" placeholder="Season 2" required
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1.5">Start Date</label>
+        <input type="datetime-local" name="starts_at" required
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1.5">End Date</label>
+        <input type="datetime-local" name="ends_at" required
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+      </div>
+      <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+        <input type="checkbox" name="is_active" class="rounded bg-gray-700 border-gray-600 text-indigo-500">
+        Set as active (deactivates others)
+      </label>
+      <button type="submit"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm py-2 rounded-lg transition">
+        Create Season
+      </button>
+    </form>
+  </div>
+
+  <!-- Season list -->
+  <div class="lg:col-span-2">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-800">
+        <h2 class="font-medium text-white">All Seasons</h2>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-800 text-gray-500 text-xs uppercase tracking-wider">
+            <th class="text-left px-6 py-3">Name</th>
+            <th class="text-left px-6 py-3">Start</th>
+            <th class="text-left px-6 py-3">End</th>
+            <th class="text-left px-6 py-3">Players</th>
+            <th class="text-left px-6 py-3">Status</th>
+            <th class="px-6 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-800">
+          {% for season in seasons %}
+          <tr class="hover:bg-gray-800/40 transition">
+            <td class="px-6 py-4 font-medium text-white">{{ season.name }}</td>
+            <td class="px-6 py-4 text-gray-400 text-xs">{{ season.starts_at|date:"M d, Y" }}</td>
+            <td class="px-6 py-4 text-gray-400 text-xs">{{ season.ends_at|date:"M d, Y" }}</td>
+            <td class="px-6 py-4 text-gray-400">{{ season.player_count }}</td>
+            <td class="px-6 py-4">
+              {% if season.is_active %}
+                <span class="px-2 py-0.5 rounded text-xs bg-green-900/50 text-green-400">Active</span>
+              {% else %}
+                <span class="px-2 py-0.5 rounded text-xs bg-gray-800 text-gray-500">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="px-6 py-4">
+              <div class="flex items-center gap-3">
+                {% if not season.is_active %}
+                <form method="post" action="{% url 'dashboard:season-activate' season.id %}">
+                  {% csrf_token %}
+                  <button class="text-xs text-indigo-400 hover:text-indigo-300 transition">Activate</button>
+                </form>
+                <form method="post" action="{% url 'dashboard:season-delete' season.id %}"
+                      onsubmit="return confirm('Delete this season? All leaderboard entries will be lost.')">
+                  {% csrf_token %}
+                  <button class="text-xs text-red-400 hover:text-red-300 transition">Delete</button>
+                </form>
+                {% else %}
+                  <a href="{% url 'dashboard:leaderboard' %}?season={{ season.id }}"
+                     class="text-xs text-gray-400 hover:text-white transition">View board</a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="6" class="px-6 py-12 text-center text-gray-600">No seasons yet</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

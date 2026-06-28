@@ -1,0 +1,143 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Item Catalog — Game Backend{% endblock %}
+{% block header %}Item Catalog{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  <!-- Create item form -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+    <h2 class="text-sm font-semibold text-white mb-4">Add New Item</h2>
+    <form method="post" action="{% url 'dashboard:catalog-create' %}" class="space-y-3">
+      {% csrf_token %}
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Item ID</label>
+        <input type="text" name="item_id" placeholder="avatar_warrior" required
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Name</label>
+        <input type="text" name="name" placeholder="Warrior Avatar" required
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Description</label>
+        <textarea name="description" rows="2" placeholder="Optional description"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"></textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Category</label>
+          <select name="category" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+            <option value="avatar">Avatar</option>
+            <option value="frame">Frame</option>
+            <option value="boost">Boost</option>
+            <option value="consumable">Consumable</option>
+            <option value="cosmetic">Cosmetic</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Currency</label>
+          <select name="currency" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+            <option value="coins">Coins</option>
+            <option value="gems">Gems</option>
+            <option value="tickets">Tickets</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Price</label>
+        <input type="number" name="price" placeholder="500" min="0" required
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+      </div>
+      <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+        <input type="checkbox" name="is_available" checked class="rounded bg-gray-700 border-gray-600 text-indigo-500">
+        Available in shop
+      </label>
+      <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm py-2 rounded-lg transition">
+        Add Item
+      </button>
+    </form>
+  </div>
+
+  <!-- Catalog table -->
+  <div class="lg:col-span-2">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
+        <h2 class="font-medium text-white">{{ items|length }} items</h2>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-800 text-gray-500 text-xs uppercase tracking-wider">
+            <th class="text-left px-6 py-3">Item</th>
+            <th class="text-left px-6 py-3">Category</th>
+            <th class="text-left px-6 py-3">Price</th>
+            <th class="text-left px-6 py-3">Status</th>
+            <th class="px-6 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-800">
+          {% for item in items %}
+          <tr class="hover:bg-gray-800/40 transition" id="item-{{ item.item_id }}">
+            <td class="px-6 py-4">
+              <p class="text-white font-medium">{{ item.name }}</p>
+              <p class="text-xs text-gray-600 font-mono">{{ item.item_id }}</p>
+              {% if item.description %}
+                <p class="text-xs text-gray-500 mt-0.5">{{ item.description|truncatechars:60 }}</p>
+              {% endif %}
+            </td>
+            <td class="px-6 py-4">
+              <span class="px-2 py-0.5 rounded text-xs bg-gray-800 text-gray-400">{{ item.category }}</span>
+            </td>
+            <td class="px-6 py-4">
+              <span class="{% if item.currency == 'coins' %}text-yellow-400{% elif item.currency == 'gems' %}text-purple-400{% else %}text-blue-400{% endif %} font-medium">
+                {{ item.price }} {{ item.currency }}
+              </span>
+            </td>
+            <td class="px-6 py-4">
+              <button onclick="toggleItem('{{ item.item_id }}')" id="toggle-{{ item.item_id }}"
+                class="px-2 py-0.5 rounded text-xs font-medium transition
+                  {% if item.is_available %}bg-green-900/50 text-green-400 hover:bg-red-900/50 hover:text-red-400
+                  {% else %}bg-red-900/50 text-red-400 hover:bg-green-900/50 hover:text-green-400{% endif %}">
+                {% if item.is_available %}Available{% else %}Hidden{% endif %}
+              </button>
+            </td>
+            <td class="px-6 py-4">
+              <form method="post" action="{% url 'dashboard:catalog-delete' item.item_id %}"
+                    onsubmit="return confirm('Delete {{ item.name }}?')">
+                {% csrf_token %}
+                <button class="text-xs text-red-400 hover:text-red-300 transition">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="5" class="px-6 py-12 text-center text-gray-600">No items in catalog</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function toggleItem(itemId) {
+  const btn = document.getElementById('toggle-' + itemId);
+  const res = await fetch(`/catalog/${itemId}/toggle/`, {
+    method: 'POST',
+    headers: {'X-CSRFToken': '{{ csrf_token }}'},
+  });
+  const data = await res.json();
+  if (data.available) {
+    btn.textContent = 'Available';
+    btn.className = btn.className.replace('bg-red-900/50 text-red-400', 'bg-green-900/50 text-green-400');
+  } else {
+    btn.textContent = 'Hidden';
+    btn.className = btn.className.replace('bg-green-900/50 text-green-400', 'bg-red-900/50 text-red-400');
+  }
+}
+</script>
+{% endblock %}

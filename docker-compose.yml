@@ -1,0 +1,159 @@
+services:
+
+  # ─── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: game-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-gameuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gamepassword}
+      POSTGRES_DB:       game_django
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gameuser} -d game_django"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  # ─── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: game-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:-redispassword}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redispassword}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # ─── Migrations ──────────────────────────────────────────────────────────────
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: game-migrate
+    command: >
+      sh -c "
+        echo 'Waiting for postgres...' &&
+        sleep 3 &&
+        python manage.py migrate --noinput &&
+        echo 'Migrations complete.'
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &django_env
+      DJANGO_SECRET_KEY:  ${DJANGO_SECRET_KEY:-dev-secret-change-me}
+      DEBUG:              ${DEBUG:-True}
+      ALLOWED_HOSTS:      ${ALLOWED_HOSTS:-*}
+      DB_NAME:            game_django
+      DB_USER:            ${POSTGRES_USER:-gameuser}
+      DB_PASSWORD:        ${POSTGRES_PASSWORD:-gamepassword}
+      DB_HOST:            postgres
+      DB_PORT:            5432
+      REDIS_URL:          redis://:${REDIS_PASSWORD:-redispassword}@redis:6379/0
+      JWT_ACCESS_SECRET:  ${JWT_ACCESS_SECRET:-change-me-access}
+      SMS_PROVIDER:       ${SMS_PROVIDER:-}
+      TWILIO_SID:         ${TWILIO_SID:-}
+      TWILIO_TOKEN:       ${TWILIO_TOKEN:-}
+      TWILIO_FROM:        ${TWILIO_FROM:-}
+      LOG_LEVEL:          ${LOG_LEVEL:-INFO}
+      ADMIN_USERNAME:     ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD:     ${ADMIN_PASSWORD:-admin1234}
+    restart: "no"
+
+  # ─── Seed ────────────────────────────────────────────────────────────────────
+  seed:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: game-seed
+    command: python scripts/seed.py
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *django_env
+    restart: "no"
+
+  # ─── Django API ───────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: game-api
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment: *django_env
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ─── Daphne WebSocket ─────────────────────────────────────────────────────────
+  ws:
+    build:
+      context: .
+      dockerfile: Dockerfile.ws
+    container_name: game-ws
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment: *django_env
+    expose:
+      - "8001"
+
+  # ─── Celery ───────────────────────────────────────────────────────────────────
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: game-celery
+    command: celery -A config worker -l info -c 2
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment: *django_env
+
+  # ─── Nginx ────────────────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: game-nginx
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      ws:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  redis_data:

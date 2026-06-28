@@ -1,0 +1,113 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Dashboard — Game Backend{% endblock %}
+{% block header %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Stat Cards -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+  {% include "dashboard/partials/stat_card.html" with id="stat-total" icon="fa-users" label="Total Players" value=total_players color="indigo" %}
+  {% include "dashboard/partials/stat_card.html" with id="stat-today" icon="fa-user-plus" label="New Today" value=new_today color="green" %}
+  {% include "dashboard/partials/stat_card.html" with id="stat-banned" icon="fa-ban" label="Banned" value=banned_players color="red" %}
+  {% include "dashboard/partials/stat_card.html" with id="stat-tx" icon="fa-exchange-alt" label="Transactions Today" value=transactions_today color="yellow" %}
+</div>
+
+<!-- Secondary stats -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <p class="text-xs text-gray-500 mb-1">Phone Linked</p>
+    <p class="text-2xl font-bold text-white">{{ phone_linked }}</p>
+  </div>
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <p class="text-xs text-gray-500 mb-1">New This Week</p>
+    <p class="text-2xl font-bold text-white">{{ new_this_week }}</p>
+  </div>
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <p class="text-xs text-gray-500 mb-1">Total Coins in Circulation</p>
+    <p class="text-2xl font-bold text-yellow-400">{{ total_coins|floatformat:0 }}</p>
+  </div>
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <p class="text-xs text-gray-500 mb-1">Total Gems</p>
+    <p class="text-2xl font-bold text-purple-400">{{ total_gems|floatformat:0 }}</p>
+  </div>
+</div>
+
+<!-- Active Season -->
+<div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-8 flex items-center justify-between">
+  <div>
+    <p class="text-xs text-gray-500 mb-1">Active Season</p>
+    {% if active_season %}
+      <p class="text-white font-semibold">{{ active_season.name }}</p>
+      <p class="text-xs text-gray-500 mt-0.5">
+        {{ active_season.starts_at|date:"M d, Y" }} → {{ active_season.ends_at|date:"M d, Y" }}
+        &nbsp;·&nbsp; {{ total_scores }} ranked players &nbsp;·&nbsp; avg score {{ avg_score }}
+      </p>
+    {% else %}
+      <p class="text-gray-400">No active season — <a href="{% url 'dashboard:seasons' %}" class="text-indigo-400 hover:underline">create one</a></p>
+    {% endif %}
+  </div>
+  <a href="{% url 'dashboard:leaderboard' %}" class="text-indigo-400 hover:text-indigo-300 text-sm transition">
+    View leaderboard →
+  </a>
+</div>
+
+<!-- Charts -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+    <h3 class="text-sm font-medium text-gray-400 mb-4">Registrations (last 7 days)</h3>
+    <canvas id="regChart" height="180"></canvas>
+  </div>
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+    <h3 class="text-sm font-medium text-gray-400 mb-4">Score Submissions (last 24h)</h3>
+    <canvas id="scoreChart" height="180"></canvas>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const REG_DATA   = {{ reg_chart|safe }};
+const SCORE_DATA = {{ score_chart|safe }};
+
+function makeChart(id, labels, values, color) {
+  const ctx = document.getElementById(id).getContext('2d');
+  return new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: color + '33',
+        borderColor: color,
+        borderWidth: 2,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#1f2937' }, ticks: { color: '#6b7280' } },
+        y: { grid: { color: '#1f2937' }, ticks: { color: '#6b7280', stepSize: 1 }, beginAtZero: true },
+      }
+    }
+  });
+}
+
+makeChart('regChart',   REG_DATA.map(r => r.day),  REG_DATA.map(r => r.count),   '#6366f1');
+makeChart('scoreChart', SCORE_DATA.map(r => r.hour), SCORE_DATA.map(r => r.count), '#10b981');
+
+// Live stat updates via WebSocket
+window.onStatsUpdate = function(data) {
+  const map = {
+    'stat-total':  data.total_players,
+    'stat-today':  data.new_today,
+    'stat-banned': data.banned,
+    'stat-tx':     data.tx_today,
+  };
+  for (const [id, val] of Object.entries(map)) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+};
+</script>
+{% endblock %}
