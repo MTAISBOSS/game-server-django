@@ -96,8 +96,6 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      seed:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
     environment: *django_env

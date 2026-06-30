@@ -5,7 +5,6 @@ from .models import Profile, PlayerStats
 
 class ProfileSerializer(serializers.ModelSerializer):
     phone_linked = serializers.SerializerMethodField()
-    player_id    = serializers.UUIDField(source='player_id', read_only=True)
 
     class Meta:
         model  = Profile
@@ -44,8 +43,6 @@ class AvatarUpdateSerializer(serializers.ModelSerializer):
 
 class PlayerStatsSerializer(serializers.ModelSerializer):
     win_rate  = serializers.FloatField(read_only=True)
-    player_id = serializers.UUIDField(source='player_id', read_only=True)
-
     class Meta:
         model  = PlayerStats
         fields = ['player_id', 'games_played', 'wins', 'losses',
@@ -53,8 +50,7 @@ class PlayerStatsSerializer(serializers.ModelSerializer):
 
 
 class PublicProfileSerializer(serializers.ModelSerializer):
-    stats     = PlayerStatsSerializer(source='player.stats', read_only=True)
-    player_id = serializers.UUIDField(source='player_id', read_only=True)
+    stats = PlayerStatsSerializer(source='player.stats', read_only=True)
 
     class Meta:
         model  = Profile

@@ -72,7 +72,7 @@ TEMPLATES = [
 # ─── Database ─────────────────────────────────────────────────────────────────
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
+        'ENGINE':   'django.db.backends.postgresql',
         'NAME':     config('DB_NAME',     default='game_django'),
         'USER':     config('DB_USER',     default='gameuser'),
         'PASSWORD': config('DB_PASSWORD', default='gamepassword'),
@@ -108,22 +108,20 @@ CHANNEL_LAYERS = {
 }
 
 # ─── Celery ───────────────────────────────────────────────────────────────────
-CELERY_BROKER_URL         = REDIS_URL
-CELERY_RESULT_BACKEND     = REDIS_URL
-CELERY_ACCEPT_CONTENT     = ['json']
-CELERY_TASK_SERIALIZER    = 'json'
-CELERY_RESULT_SERIALIZER  = 'json'
-CELERY_TIMEZONE           = 'UTC'
+CELERY_BROKER_URL        = REDIS_URL
+CELERY_RESULT_BACKEND    = REDIS_URL
+CELERY_ACCEPT_CONTENT    = ['json']
+CELERY_TASK_SERIALIZER   = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE          = 'UTC'
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 AUTH_USER_MODEL = 'auth_service.Player'
 
-LOGIN_URL = '/login/'
-LOGIN_REDIRECT_URL = '/'
-
 AUTHENTICATION_BACKENDS = [
+    'apps.auth_service.backends.AdminBackend',
     'apps.auth_service.backends.DeviceBackend',
-    'django.contrib.auth.backends.ModelBackend',
 ]
 
 # ─── REST Framework ───────────────────────────────────────────────────────────
@@ -149,49 +147,66 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/min',
         'user': '300/min',
-        'otp':  '5/10min',
     },
+}
+
+# ─── DRF Spectacular (Swagger) ────────────────────────────────────────────────
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Game Backend API',
+    'DESCRIPTION': 'REST API for the game backend — Auth, Profile, Leaderboard, Resources.',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SWAGGER_UI_SETTINGS': {
+        'deepLinking': True,
+        'persistAuthorization': True,
+    },
+    # Fixes introspection errors from custom throttle/auth classes
+    'ENUM_GENERATE_CHOICE_DESCRIPTION': False,
+    'POSTPROCESSING_HOOKS': [],
 }
 
 # ─── JWT ──────────────────────────────────────────────────────────────────────
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME':  timedelta(hours=2),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
-    'ROTATE_REFRESH_TOKENS':  True,
+    'ACCESS_TOKEN_LIFETIME':    timedelta(hours=2),
+    'REFRESH_TOKEN_LIFETIME':   timedelta(days=30),
+    'ROTATE_REFRESH_TOKENS':    True,
     'BLACKLIST_AFTER_ROTATION': True,
-    'UPDATE_LAST_LOGIN': True,
-    'ALGORITHM': 'HS256',
-    'SIGNING_KEY': config('JWT_ACCESS_SECRET', default=SECRET_KEY),
-    'AUTH_HEADER_TYPES': ('Bearer',),
-    'USER_ID_FIELD': 'id',
-    'USER_ID_CLAIM': 'player_id',
+    'UPDATE_LAST_LOGIN':        True,
+    'ALGORITHM':                'HS256',
+    'SIGNING_KEY':              config('JWT_ACCESS_SECRET', default=SECRET_KEY),
+    'AUTH_HEADER_TYPES':        ('Bearer',),
+    'USER_ID_FIELD':            'id',
+    'USER_ID_CLAIM':            'player_id',
 }
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL', default=True, cast=bool)
-CORS_ALLOWED_ORIGINS   = config('CORS_ORIGINS', default='').split(',') if config('CORS_ORIGINS', default='') else []
 
 # ─── Static & Media ───────────────────────────────────────────────────────────
-STATIC_URL  = '/static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_URL   = '/static/'
+STATIC_ROOT  = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 MEDIA_URL  = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# ─── Sessions ─────────────────────────────────────────────────────────────────
+SESSION_ENGINE         = 'django.contrib.sessions.backends.db'
+SESSION_COOKIE_AGE     = 86400 * 7   # 7 days
+SESSION_COOKIE_SECURE  = False        # set True in production with HTTPS
+LOGIN_URL              = '/login/'
+
 # ─── Logging ──────────────────────────────────────────────────────────────────
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
-        'json': {
-            '()': 'django.utils.log.ServerFormatter',
-            'format': '[%(asctime)s] %(levelname)s %(name)s: %(message)s',
-        },
+        'simple': {'format': '[%(asctime)s] %(levelname)s %(name)s: %(message)s'},
     },
     'handlers': {
-        'console': {'class': 'logging.StreamHandler', 'formatter': 'json'},
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'simple'},
     },
     'root': {'handlers': ['console'], 'level': config('LOG_LEVEL', default='INFO')},
 }
@@ -200,8 +215,8 @@ LOGGING = {
 OTP_EXPIRY_MINUTES = 5
 OTP_MAX_ATTEMPTS   = 3
 SMS_PROVIDER       = config('SMS_PROVIDER', default='')
-TWILIO_SID         = config('TWILIO_SID', default='')
+TWILIO_SID         = config('TWILIO_SID',   default='')
 TWILIO_TOKEN       = config('TWILIO_TOKEN', default='')
-TWILIO_FROM        = config('TWILIO_FROM', default='')
+TWILIO_FROM        = config('TWILIO_FROM',  default='')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

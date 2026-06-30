@@ -1,7 +1,7 @@
 import json
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db.models import Count, Sum, Avg, Q
 from django.db.models.functions import TruncDay, TruncHour
@@ -18,11 +18,20 @@ from apps.resources.models import Wallet, Transaction, CatalogItem, PlayerInvent
 
 
 def is_staff(user):
-    return user.is_authenticated and (user.is_staff or user.role == 'admin')
+    return user.is_authenticated and (user.is_staff or getattr(user, 'role', '') == 'admin')
 
 
 def staff_required(view_func):
-    return login_required(user_passes_test(is_staff)(view_func))
+    """Decorator that requires staff/admin and redirects to OUR login page."""
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect(f'/login/?next={request.path}')
+        if not is_staff(request.user):
+            messages.error(request, 'You do not have permission to access this page.')
+            return redirect('/login/')
+        return view_func(request, *args, **kwargs)
+    wrapper.__name__ = view_func.__name__
+    return wrapper
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -31,17 +40,13 @@ def login_view(request):
     if request.user.is_authenticated and is_staff(request.user):
         return redirect('dashboard:home')
     if request.method == 'POST':
-        username = request.POST.get('username')
-        password = request.POST.get('password')
-        # USERNAME_FIELD is 'id' (a UUIDField), so look up by username first
-        try:
-            player = Player.objects.get(username=username)
-            user = authenticate(request, username=str(player.id), password=password)
-        except Player.DoesNotExist:
-            user = None
+        username = request.POST.get('username', '').strip()
+        password = request.POST.get('password', '')
+        user = authenticate(request, username=username, password=password)
         if user and is_staff(user):
             login(request, user)
-            return redirect('dashboard:home')
+            next_url = request.POST.get('next') or request.GET.get('next') or '/'
+            return redirect(next_url)
         messages.error(request, 'Invalid credentials or insufficient permissions.')
     return render(request, 'dashboard/login.html')
 
@@ -73,8 +78,7 @@ def home(request):
     total_gems   = Wallet.objects.aggregate(s=Sum('gems'))['s'] or 0
     transactions_today = Transaction.objects.filter(created_at__gte=day).count()
 
-    # Registrations over last 7 days for chart
-    reg_chart = (
+    reg_chart = list(
         Player.objects
         .filter(created_at__gte=week)
         .annotate(day=TruncDay('created_at'))
@@ -83,8 +87,7 @@ def home(request):
         .order_by('day')
     )
 
-    # Score submissions over last 24h
-    score_chart = (
+    score_chart = list(
         ScoreHistory.objects
         .filter(created_at__gte=day)
         .annotate(hour=TruncHour('created_at'))
@@ -94,19 +97,19 @@ def home(request):
     )
 
     ctx = {
-        'total_players':       total_players,
-        'new_today':           new_today,
-        'new_this_week':       new_this_week,
-        'banned_players':      banned_players,
-        'phone_linked':        phone_linked,
-        'active_season':       active_season,
-        'total_scores':        total_scores,
-        'avg_score':           round(avg_score),
-        'total_coins':         total_coins,
-        'total_gems':          total_gems,
-        'transactions_today':  transactions_today,
-        'reg_chart':           json.dumps([{'day': str(r['day'].date()), 'count': r['count']} for r in reg_chart]),
-        'score_chart':         json.dumps([{'hour': str(r['hour'].hour) + 'h', 'count': r['count']} for r in score_chart]),
+        'total_players':      total_players,
+        'new_today':          new_today,
+        'new_this_week':      new_this_week,
+        'banned_players':     banned_players,
+        'phone_linked':       phone_linked,
+        'active_season':      active_season,
+        'total_scores':       total_scores,
+        'avg_score':          round(avg_score),
+        'total_coins':        total_coins,
+        'total_gems':         total_gems,
+        'transactions_today': transactions_today,
+        'reg_chart':   json.dumps([{'day': str(r['day'].date()), 'count': r['count']} for r in reg_chart]),
+        'score_chart': json.dumps([{'hour': str(r['hour'].hour) + 'h', 'count': r['count']} for r in score_chart]),
     }
     return render(request, 'dashboard/home.html', ctx)
 
@@ -115,13 +118,17 @@ def home(request):
 
 @staff_required
 def players(request):
-    q       = request.GET.get('q', '')
-    role    = request.GET.get('role', '')
-    banned  = request.GET.get('banned', '')
+    q      = request.GET.get('q', '')
+    role   = request.GET.get('role', '')
+    banned = request.GET.get('banned', '')
 
     qs = Player.objects.select_related('profile').order_by('-created_at')
     if q:
-        qs = qs.filter(Q(device_id__icontains=q) | Q(phone__icontains=q) | Q(profile__username__icontains=q))
+        qs = qs.filter(
+            Q(device_id__icontains=q) |
+            Q(phone__icontains=q) |
+            Q(profile__username__icontains=q)
+        )
     if role:
         qs = qs.filter(role=role)
     if banned == '1':
@@ -140,16 +147,15 @@ def players(request):
 
 @staff_required
 def player_detail(request, player_id):
-    player  = get_object_or_404(Player, id=player_id)
-    profile = getattr(player, 'profile', None)
-    stats   = getattr(player, 'stats', None)
-    wallet  = getattr(player, 'wallet', None)
+    player    = get_object_or_404(Player, id=player_id)
+    profile   = getattr(player, 'profile', None)
+    stats     = getattr(player, 'stats', None)
+    wallet    = getattr(player, 'wallet', None)
     inventory = PlayerInventory.objects.filter(player=player).select_related('item')
     transactions = Transaction.objects.filter(player=player)[:20]
 
     active_season = Season.get_active()
-    lb_entry = None
-    lb_rank  = None
+    lb_entry = lb_rank = None
     if active_season:
         lb_entry = LeaderboardEntry.objects.filter(player=player, season=active_season).first()
         if lb_entry:
@@ -157,15 +163,18 @@ def player_detail(request, player_id):
                 season=active_season, score__gt=lb_entry.score
             ).count() + 1
 
+    catalog_items = CatalogItem.objects.filter(is_available=True).order_by('category', 'name')
+
     return render(request, 'dashboard/player_detail.html', {
-        'player':       player,
-        'profile':      profile,
-        'stats':        stats,
-        'wallet':       wallet,
-        'inventory':    inventory,
-        'transactions': transactions,
-        'lb_entry':     lb_entry,
-        'lb_rank':      lb_rank,
+        'player':        player,
+        'profile':       profile,
+        'stats':         stats,
+        'wallet':        wallet,
+        'inventory':     inventory,
+        'transactions':  transactions,
+        'lb_entry':      lb_entry,
+        'lb_rank':       lb_rank,
+        'catalog_items': catalog_items,
     })
 
 
@@ -173,11 +182,10 @@ def player_detail(request, player_id):
 @require_POST
 def player_ban(request, player_id):
     player = get_object_or_404(Player, id=player_id)
-    reason = request.POST.get('reason', '')
-    player.is_banned = True
-    player.ban_reason = reason
+    player.is_banned  = True
+    player.ban_reason = request.POST.get('reason', '')
     player.save(update_fields=['is_banned', 'ban_reason'])
-    messages.success(request, f'Player {player_id} banned.')
+    messages.success(request, f'Player banned.')
     return redirect('dashboard:player-detail', player_id=player_id)
 
 
@@ -188,7 +196,7 @@ def player_unban(request, player_id):
     player.is_banned  = False
     player.ban_reason = ''
     player.save(update_fields=['is_banned', 'ban_reason'])
-    messages.success(request, f'Player {player_id} unbanned.')
+    messages.success(request, f'Player unbanned.')
     return redirect('dashboard:player-detail', player_id=player_id)
 
 
@@ -212,7 +220,7 @@ def grant_currency(request, player_id):
         amount=amount, balance_after=getattr(wallet, currency),
         reason=reason, reference_id=f'admin:{request.user.id}',
     )
-    messages.success(request, f'Granted {amount} {currency} to player.')
+    messages.success(request, f'Granted {amount} {currency}.')
     return redirect('dashboard:player-detail', player_id=player_id)
 
 
@@ -229,10 +237,12 @@ def grant_item(request, player_id):
         messages.error(request, 'Item not found.')
         return redirect('dashboard:player-detail', player_id=player_id)
 
-    inv, _ = PlayerInventory.objects.get_or_create(player=player, item=item, defaults={'quantity': 0})
+    inv, _ = PlayerInventory.objects.get_or_create(
+        player=player, item=item, defaults={'quantity': 0}
+    )
     inv.quantity += qty
     inv.save(update_fields=['quantity'])
-    messages.success(request, f'Granted {qty}x {item.name} to player.')
+    messages.success(request, f'Granted {qty}x {item.name}.')
     return redirect('dashboard:player-detail', player_id=player_id)
 
 
@@ -240,15 +250,10 @@ def grant_item(request, player_id):
 
 @staff_required
 def leaderboard(request):
-    seasons = Season.objects.all()
-    season_id = request.GET.get('season')
+    seasons       = Season.objects.all()
     active_season = Season.get_active()
-    season = None
-
-    if season_id:
-        season = get_object_or_404(Season, id=season_id)
-    else:
-        season = active_season
+    season_id     = request.GET.get('season')
+    season        = get_object_or_404(Season, id=season_id) if season_id else active_season
 
     entries = []
     if season:
@@ -261,11 +266,11 @@ def leaderboard(request):
         for i, e in enumerate(raw, 1):
             profile = getattr(e.player, 'profile', None)
             entries.append({
-                'rank':         i,
-                'player':       e.player,
-                'profile':      profile,
-                'score':        e.score,
-                'updated_at':   e.updated_at,
+                'rank':       i,
+                'player':     e.player,
+                'profile':    profile,
+                'score':      e.score,
+                'updated_at': e.updated_at,
             })
 
     return render(request, 'dashboard/leaderboard.html', {
@@ -288,11 +293,7 @@ def season_create(request):
     starts_at = request.POST.get('starts_at')
     ends_at   = request.POST.get('ends_at')
     is_active = request.POST.get('is_active') == 'on'
-
-    Season.objects.create(
-        name=name, starts_at=starts_at,
-        ends_at=ends_at, is_active=is_active,
-    )
+    Season.objects.create(name=name, starts_at=starts_at, ends_at=ends_at, is_active=is_active)
     messages.success(request, f'Season "{name}" created.')
     return redirect('dashboard:seasons')
 
@@ -332,12 +333,12 @@ def catalog(request):
 @require_POST
 def catalog_create(request):
     CatalogItem.objects.create(
-        item_id     = request.POST.get('item_id'),
-        name        = request.POST.get('name'),
-        description = request.POST.get('description', ''),
-        category    = request.POST.get('category'),
-        currency    = request.POST.get('currency'),
-        price       = int(request.POST.get('price', 0)),
+        item_id      = request.POST.get('item_id'),
+        name         = request.POST.get('name'),
+        description  = request.POST.get('description', ''),
+        category     = request.POST.get('category'),
+        currency     = request.POST.get('currency'),
+        price        = int(request.POST.get('price', 0)),
         is_available = request.POST.get('is_available') == 'on',
     )
     messages.success(request, 'Item created.')
@@ -362,16 +363,16 @@ def catalog_delete(request, item_id):
     return redirect('dashboard:catalog')
 
 
-# ─── Live stats API (called by JS) ────────────────────────────────────────────
+# ─── Live stats API ───────────────────────────────────────────────────────────
 
 @staff_required
 def api_stats(request):
     now = timezone.now()
     day = now - timedelta(days=1)
     return JsonResponse({
-        'total_players':  Player.objects.count(),
-        'new_today':      Player.objects.filter(created_at__gte=day).count(),
-        'banned':         Player.objects.filter(is_banned=True).count(),
+        'total_players':      Player.objects.count(),
+        'new_today':          Player.objects.filter(created_at__gte=day).count(),
+        'banned':             Player.objects.filter(is_banned=True).count(),
         'transactions_today': Transaction.objects.filter(created_at__gte=day).count(),
-        'active_season':  str(Season.get_active()) if Season.get_active() else 'None',
+        'active_season':      str(Season.get_active()) if Season.get_active() else 'None',
     })
