@@ -13,7 +13,7 @@ class ProfileSerializer(serializers.ModelSerializer):
                   'phone_linked', 'created_at']
         read_only_fields = ['player_id', 'level', 'xp', 'created_at', 'phone_linked']
 
-    def get_phone_linked(self, obj):
+    def get_phone_linked(self, obj) -> bool:
         return bool(obj.player.phone)
 
     def validate_username(self, value):

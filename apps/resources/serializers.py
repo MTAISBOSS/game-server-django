@@ -3,7 +3,6 @@ from .models import Wallet, Transaction, CatalogItem, PlayerInventory
 
 
 class WalletSerializer(serializers.ModelSerializer):
-    player_id = serializers.UUIDField(source='player_id', read_only=True)
     class Meta:
         model  = Wallet
         fields = ['player_id', 'coins', 'gems', 'tickets', 'updated_at']

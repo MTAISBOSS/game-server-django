@@ -1,15 +1,21 @@
 from django.core.cache import cache
 from django.db import transaction
-from django.db.models import Window, F
-from django.db.models.functions import Rank
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from drf_spectacular.utils import extend_schema, OpenApiParameter
 
+from apps.auth_service.schema_serializers import ErrorResponseSerializer
 from .models import Season, LeaderboardEntry, ScoreHistory
 from .serializers import (
     SeasonSerializer, RankEntrySerializer,
     ScoreSubmitSerializer, ScoreResultSerializer,
+)
+from .schema_serializers import (
+    GlobalBoardResponseSerializer, TopPlayersResponseSerializer,
+    MyRankResponseSerializer, FriendsBoardResponseSerializer,
+    SeasonListResponseSerializer, SeasonBoardResponseSerializer,
+    FriendsBoardRequestSerializer,
 )
 
 
@@ -40,6 +46,17 @@ def build_board(season, limit=50, offset=0):
 class GlobalBoardView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='leaderboard_global',
+        summary='Global leaderboard',
+        description='Get the global leaderboard for the active season (paginated).',
+        parameters=[
+            OpenApiParameter('page', int, OpenApiParameter.QUERY, description='Page number', default=1),
+            OpenApiParameter('pageSize', int, OpenApiParameter.QUERY, description='Page size (max 100)', default=50),
+        ],
+        responses={200: GlobalBoardResponseSerializer},
+        tags=['Leaderboard'],
+    )
     def get(self, request):
         page      = int(request.query_params.get('page', 1))
         page_size = min(int(request.query_params.get('pageSize', 50)), 100)
@@ -65,6 +82,17 @@ class GlobalBoardView(APIView):
 class TopPlayersView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='leaderboard_top',
+        summary='Top players',
+        description='Get the top N players on the leaderboard.',
+        parameters=[
+            OpenApiParameter('count', int, OpenApiParameter.QUERY, description='Number of players (max 100)', default=10),
+            OpenApiParameter('seasonId', str, OpenApiParameter.QUERY, description='Season UUID (optional, defaults to active)'),
+        ],
+        responses={200: TopPlayersResponseSerializer},
+        tags=['Leaderboard'],
+    )
     def get(self, request):
         count     = min(int(request.query_params.get('count', 10)), 100)
         season_id = request.query_params.get('seasonId')
@@ -87,6 +115,16 @@ class TopPlayersView(APIView):
 class MyRankView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='leaderboard_me',
+        summary='My rank',
+        description='Get the current player\'s rank and score on the leaderboard.',
+        parameters=[
+            OpenApiParameter('seasonId', str, OpenApiParameter.QUERY, description='Season UUID (optional, defaults to active)'),
+        ],
+        responses={200: MyRankResponseSerializer},
+        tags=['Leaderboard'],
+    )
     def get(self, request):
         season_id = request.query_params.get('seasonId')
         season    = Season.objects.get(id=season_id) if season_id else Season.get_active()
@@ -105,6 +143,16 @@ class MyRankView(APIView):
 class SubmitScoreView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='leaderboard_score',
+        summary='Submit score',
+        description='Submit a score after a match. The score is added to the '
+                    'active season leaderboard. If the new total is a personal best, '
+                    '`is_highscore` is true.',
+        request=ScoreSubmitSerializer,
+        responses={200: ScoreResultSerializer, 400: ErrorResponseSerializer, 404: ErrorResponseSerializer},
+        tags=['Leaderboard'],
+    )
     def post(self, request):
         ser = ScoreSubmitSerializer(data=request.data)
         if not ser.is_valid():
@@ -152,6 +200,14 @@ class SubmitScoreView(APIView):
 class FriendsBoardView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='leaderboard_friends',
+        summary='Friends leaderboard',
+        description='Get the leaderboard among the current player and their friends.',
+        request=FriendsBoardRequestSerializer,
+        responses={200: FriendsBoardResponseSerializer},
+        tags=['Leaderboard'],
+    )
     def post(self, request):
         friend_ids = request.data.get('friend_ids', [])[:100]
         all_ids    = list(set([str(request.user.id)] + friend_ids))
@@ -186,6 +242,13 @@ class FriendsBoardView(APIView):
 class SeasonListView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='leaderboard_seasons',
+        summary='List seasons',
+        description='Get all leaderboard seasons.',
+        responses={200: SeasonListResponseSerializer},
+        tags=['Leaderboard'],
+    )
     def get(self, request):
         seasons = Season.objects.all()
         return Response({'seasons': SeasonSerializer(seasons, many=True).data})
@@ -194,6 +257,13 @@ class SeasonListView(APIView):
 class CurrentSeasonView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='leaderboard_season_current',
+        summary='Current active season',
+        description='Get the currently active season.',
+        responses={200: SeasonSerializer, 404: ErrorResponseSerializer},
+        tags=['Leaderboard'],
+    )
     def get(self, request):
         season = Season.get_active()
         if not season:
@@ -204,6 +274,18 @@ class CurrentSeasonView(APIView):
 class SeasonBoardView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='leaderboard_season_board',
+        summary='Season leaderboard',
+        description='Get the leaderboard for a specific season (paginated).',
+        parameters=[
+            OpenApiParameter('page', int, OpenApiParameter.QUERY, description='Page number', default=1),
+            OpenApiParameter('pageSize', int, OpenApiParameter.QUERY, description='Page size (max 100)', default=50),
+            OpenApiParameter('season_id', str, OpenApiParameter.PATH, description='Season UUID'),
+        ],
+        responses={200: SeasonBoardResponseSerializer, 404: ErrorResponseSerializer},
+        tags=['Leaderboard'],
+    )
     def get(self, request, season_id):
         page      = int(request.query_params.get('page', 1))
         page_size = min(int(request.query_params.get('pageSize', 50)), 100)

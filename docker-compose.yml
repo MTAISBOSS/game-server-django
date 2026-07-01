@@ -11,8 +11,9 @@ services:
       POSTGRES_DB:       game_django
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # ⚠️ No ports exposed to host — only accessible within Docker network
+    expose:
+      - "5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gameuser} -d game_django"]
       interval: 5s
@@ -28,8 +29,9 @@ services:
     command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:-redispassword}
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
+    # ⚠️ No ports exposed to host — only accessible within Docker network
+    expose:
+      - "6379"
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redispassword}", "ping"]
       interval: 5s
@@ -55,7 +57,7 @@ services:
         condition: service_healthy
     environment: &django_env
       DJANGO_SECRET_KEY:  ${DJANGO_SECRET_KEY:-dev-secret-change-me}
-      DEBUG:              ${DEBUG:-True}
+      DEBUG:              ${DEBUG:-False}
       ALLOWED_HOSTS:      ${ALLOWED_HOSTS:-*}
       DB_NAME:            game_django
       DB_USER:            ${POSTGRES_USER:-gameuser}
@@ -68,7 +70,7 @@ services:
       TWILIO_SID:         ${TWILIO_SID:-}
       TWILIO_TOKEN:       ${TWILIO_TOKEN:-}
       TWILIO_FROM:        ${TWILIO_FROM:-}
-      LOG_LEVEL:          ${LOG_LEVEL:-INFO}
+      LOG_LEVEL:          ${LOG_LEVEL:-WARNING}
       ADMIN_USERNAME:     ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD:     ${ADMIN_PASSWORD:-admin1234}
     restart: "no"
@@ -139,6 +141,16 @@ services:
         condition: service_healthy
     environment: *django_env
 
+  # ─── Certbot (Let's Encrypt) ─────────────────────────────────────────────────
+  certbot:
+    image: certbot/certbot
+    container_name: game-certbot
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    # Run once manually:  docker compose run --rm certbot certonly --webroot -w /var/www/certbot -d mochi.work.gd --email YOUR_EMAIL --agree-tos --no-eff-email
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
   # ─── Nginx ────────────────────────────────────────────────────────────────────
   nginx:
     image: nginx:alpine
@@ -146,8 +158,11 @@ services:
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - certbot_conf:/etc/letsencrypt:ro
+      - certbot_webroot:/var/www/certbot:ro
     depends_on:
       api:
         condition: service_healthy
@@ -157,3 +172,5 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  certbot_conf:
+  certbot_webroot:

@@ -7,11 +7,16 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
+from drf_spectacular.utils import extend_schema
 
 from .models import Player, OTPCode, RefreshTokenRecord
 from .serializers import (
     DeviceAuthSerializer, PhoneLinkSerializer, OTPVerifySerializer,
     PhoneLoginSerializer, RefreshSerializer,
+)
+from .schema_serializers import (
+    TokenResponseSerializer, OtpSentResponseSerializer,
+    ErrorResponseSerializer, MessageResponseSerializer, HealthResponseSerializer,
 )
 from .utils import (
     generate_otp, hash_otp, verify_otp,
@@ -42,6 +47,15 @@ def make_token_response(player, is_new=False):
 class DeviceAuthView(APIView):
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        operation_id='auth_device',
+        summary='Device login / register',
+        description='Authenticate or register a new player via device ID. '
+                    'Returns JWT access + refresh tokens.',
+        request=DeviceAuthSerializer,
+        responses={200: TokenResponseSerializer, 400: ErrorResponseSerializer, 403: ErrorResponseSerializer},
+        tags=['Auth'],
+    )
     def post(self, request):
         ser = DeviceAuthSerializer(data=request.data)
         if not ser.is_valid():
@@ -70,6 +84,20 @@ class DeviceAuthView(APIView):
 class PhoneLinkView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='auth_phone_link',
+        summary='Link phone number',
+        description='Request an OTP to link a phone number to the current account. '
+                    'Requires JWT authentication.',
+        request=PhoneLinkSerializer,
+        responses={
+            200: OtpSentResponseSerializer,
+            400: ErrorResponseSerializer,
+            409: ErrorResponseSerializer,
+            500: ErrorResponseSerializer,
+        },
+        tags=['Auth'],
+    )
     def post(self, request):
         ser = PhoneLinkSerializer(data=request.data)
         if not ser.is_valid():
@@ -106,6 +134,21 @@ class PhoneLinkView(APIView):
 class OTPVerifyView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='auth_phone_verify',
+        summary='Verify OTP (phone link)',
+        description='Verify the OTP sent during phone linking. '
+                    'On success, the phone is permanently linked and a new token pair is issued.',
+        request=OTPVerifySerializer,
+        responses={
+            200: TokenResponseSerializer,
+            400: ErrorResponseSerializer,
+            404: ErrorResponseSerializer,
+            408: ErrorResponseSerializer,
+            429: ErrorResponseSerializer,
+        },
+        tags=['Auth'],
+    )
     def post(self, request):
         ser = OTPVerifySerializer(data=request.data)
         if not ser.is_valid():
@@ -147,6 +190,15 @@ class OTPVerifyView(APIView):
 class PhoneLoginView(APIView):
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        operation_id='auth_phone_login',
+        summary='Phone login (request OTP)',
+        description='Request an OTP for phone-based login. '
+                    'No existing session required. The phone must already be linked to an account.',
+        request=PhoneLoginSerializer,
+        responses={200: OtpSentResponseSerializer, 400: ErrorResponseSerializer, 404: ErrorResponseSerializer},
+        tags=['Auth'],
+    )
     def post(self, request):
         ser = PhoneLoginSerializer(data=request.data)
         if not ser.is_valid():
@@ -180,6 +232,22 @@ class PhoneLoginVerifyView(APIView):
     """Verify OTP for phone-only login (no existing session needed)."""
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        operation_id='auth_phone_confirm',
+        summary='Phone login confirm (verify OTP)',
+        description='Verify the OTP and complete phone-based login. '
+                    'No existing session required. Returns JWT tokens on success.',
+        request=OTPVerifySerializer,
+        responses={
+            200: TokenResponseSerializer,
+            400: ErrorResponseSerializer,
+            403: ErrorResponseSerializer,
+            404: ErrorResponseSerializer,
+            408: ErrorResponseSerializer,
+            429: ErrorResponseSerializer,
+        },
+        tags=['Auth'],
+    )
     def post(self, request):
         ser = OTPVerifySerializer(data=request.data)
         if not ser.is_valid():
@@ -222,6 +290,15 @@ class PhoneLoginVerifyView(APIView):
 class TokenRefreshView(APIView):
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        operation_id='auth_refresh',
+        summary='Refresh access token',
+        description='Exchange a valid refresh token for a new JWT token pair. '
+                    'The old refresh token is immediately blacklisted.',
+        request=RefreshSerializer,
+        responses={200: TokenResponseSerializer, 400: ErrorResponseSerializer, 401: ErrorResponseSerializer},
+        tags=['Auth'],
+    )
     def post(self, request):
         ser = RefreshSerializer(data=request.data)
         if not ser.is_valid():
@@ -239,6 +316,14 @@ class TokenRefreshView(APIView):
 class LogoutView(APIView):
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        operation_id='auth_logout',
+        summary='Logout',
+        description='Blacklist the refresh token to end the session.',
+        request=RefreshSerializer,
+        responses={200: MessageResponseSerializer, 400: ErrorResponseSerializer},
+        tags=['Auth'],
+    )
     def post(self, request):
         ser = RefreshSerializer(data=request.data)
         if not ser.is_valid():
@@ -256,5 +341,12 @@ class LogoutView(APIView):
 class HealthView(APIView):
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        operation_id='health_check',
+        summary='Health check',
+        description='Returns service health status.',
+        responses={200: HealthResponseSerializer},
+        tags=['System'],
+    )
     def get(self, request):
         return Response({'status': 'ok', 'service': 'game-backend-django'})

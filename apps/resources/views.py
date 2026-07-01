@@ -1,15 +1,23 @@
 from django.db import transaction
 from django.utils import timezone
 from django.core.cache import cache
+from rest_framework import generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from rest_framework import generics
+from drf_spectacular.utils import extend_schema, OpenApiParameter
 
+from apps.auth_service.schema_serializers import ErrorResponseSerializer
 from .models import Wallet, Transaction, CatalogItem, PlayerInventory, DailyReward
 from .serializers import (
     WalletSerializer, TransactionSerializer, CatalogItemSerializer,
     InventoryItemSerializer, DailyRewardResultSerializer,
+)
+from .schema_serializers import (
+    CurrencyRequestSerializer, SpendResponseSerializer,
+    ConsumeRequestSerializer, ConsumeResponseSerializer,
+    PurchaseRequestSerializer, PurchaseResponseSerializer,
+    InventoryResponseSerializer,
 )
 
 DAILY_REWARDS = [
@@ -36,9 +44,18 @@ def record_transaction(player, tx_type, currency, amount, balance_after, reason=
     )
 
 
+# ── Wallet ───────────────────────────────────────────────────────────────────
+
 class WalletView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='wallet_get',
+        summary='Get wallet',
+        description='Get the current player\'s wallet balance (coins, gems, tickets).',
+        responses={200: WalletSerializer},
+        tags=['Resources'],
+    )
     def get(self, request):
         wallet = get_or_create_wallet(request.user)
         return Response(WalletSerializer(wallet).data)
@@ -48,6 +65,14 @@ class AddCurrencyView(APIView):
     """Internal/admin use — add currency to a player's wallet."""
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='wallet_add',
+        summary='Add currency',
+        description='Add currency (coins, gems, or tickets) to the player\'s wallet.',
+        request=CurrencyRequestSerializer,
+        responses={200: WalletSerializer, 400: ErrorResponseSerializer},
+        tags=['Resources'],
+    )
     def post(self, request):
         currency = request.data.get('currency')
         amount   = int(request.data.get('amount', 0))
@@ -70,6 +95,15 @@ class AddCurrencyView(APIView):
 class SpendCurrencyView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='wallet_spend',
+        summary='Spend currency',
+        description='Spend currency (coins, gems, or tickets) from the player\'s wallet. '
+                    'Returns error if insufficient balance.',
+        request=CurrencyRequestSerializer,
+        responses={200: SpendResponseSerializer, 400: ErrorResponseSerializer},
+        tags=['Resources'],
+    )
     def post(self, request):
         currency = request.data.get('currency')
         amount   = int(request.data.get('amount', 0))
@@ -92,9 +126,18 @@ class SpendCurrencyView(APIView):
         return Response({'success': True, 'updated_wallet': WalletSerializer(wallet).data})
 
 
+# ── Inventory ────────────────────────────────────────────────────────────────
+
 class InventoryView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='inventory_get',
+        summary='Get inventory',
+        description='Get the current player\'s inventory (items with quantity > 0).',
+        responses={200: InventoryResponseSerializer},
+        tags=['Resources'],
+    )
     def get(self, request):
         items = PlayerInventory.objects.filter(
             player=request.user, quantity__gt=0
@@ -105,6 +148,14 @@ class InventoryView(APIView):
 class ConsumeItemView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='inventory_consume',
+        summary='Consume item',
+        description='Use/consume items from inventory. Decreases the quantity.',
+        request=ConsumeRequestSerializer,
+        responses={200: ConsumeResponseSerializer, 404: ErrorResponseSerializer},
+        tags=['Resources'],
+    )
     def post(self, request, inventory_id):
         quantity = int(request.data.get('quantity', 1))
         try:
@@ -122,10 +173,24 @@ class ConsumeItemView(APIView):
         return Response({'success': True, 'remaining': inv.quantity})
 
 
+# ── Catalog / Shop ───────────────────────────────────────────────────────────
+
 class CatalogView(generics.ListAPIView):
     permission_classes  = [IsAuthenticated]
     serializer_class    = CatalogItemSerializer
+    queryset            = CatalogItem.objects.none()  # prevents AnonymousUser error in schema gen
 
+    @extend_schema(
+        operation_id='catalog_list',
+        summary='Browse catalog',
+        description='Get available catalog items, optionally filtered by category.',
+        parameters=[
+            OpenApiParameter('category', str, OpenApiParameter.QUERY,
+                             description='Filter by category', required=False),
+        ],
+        responses={200: CatalogItemSerializer(many=True)},
+        tags=['Resources'],
+    )
     def get_queryset(self):
         qs = CatalogItem.objects.filter(is_available=True)
         category = self.request.query_params.get('category')
@@ -137,6 +202,15 @@ class CatalogView(generics.ListAPIView):
 class PurchaseItemView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='catalog_purchase',
+        summary='Purchase item',
+        description='Purchase an item from the catalog. Deducts currency from wallet '
+                    'and adds the item to inventory.',
+        request=PurchaseRequestSerializer,
+        responses={200: PurchaseResponseSerializer, 404: ErrorResponseSerializer},
+        tags=['Resources'],
+    )
     def post(self, request, item_id):
         quantity = int(request.data.get('quantity', 1))
         try:
@@ -170,12 +244,25 @@ class PurchaseItemView(APIView):
         })
 
 
+# ── Transactions ─────────────────────────────────────────────────────────────
+
 class TransactionListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class   = TransactionSerializer
+    queryset           = Transaction.objects.none()  # prevents AnonymousUser error in schema gen
 
+    @extend_schema(
+        operation_id='transactions_list',
+        summary='Transaction history',
+        description='Get the current player\'s transaction history (paginated).',
+        parameters=[
+            OpenApiParameter('page', int, OpenApiParameter.QUERY, description='Page number', default=1),
+        ],
+        responses={200: TransactionSerializer(many=True)},
+        tags=['Resources'],
+    )
     def get_queryset(self):
-        return Transaction.objects.filter(player=request.user)
+        return Transaction.objects.filter(player=self.request.user)
 
     def list(self, request, *args, **kwargs):
         qs    = Transaction.objects.filter(player=request.user)
@@ -184,9 +271,20 @@ class TransactionListView(generics.ListAPIView):
         return self.get_paginated_response(ser.data)
 
 
+# ── Daily Reward ────────────────────────────────────────────────────────────
+
 class DailyRewardView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        operation_id='daily_reward',
+        summary='Claim daily reward',
+        description='Claim the daily login reward. Rewards scale with consecutive login streak '
+                    '(up to 7 days, then resets). Can only be claimed once per day.',
+        request=None,
+        responses={200: DailyRewardResultSerializer},
+        tags=['Resources'],
+    )
     def post(self, request):
         now        = timezone.now()
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
